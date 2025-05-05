@@ -1,6 +1,23 @@
 build_kit:
   name: python3
   version: latest
+inbound_topics:
+  - name: IMAGE_DATA
+    message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
 outbound_topics:
-  - name: HELLO_WORLD_MESSAGE
-    message_type: make87_messages.text.text_plain.PlainText
+  - name: DETECTIONS
+    message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned
+provider_endpoints:
+  - name: DETECTIONS
+    requester_message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
+    provider_message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned
+  - name: MODEL_ONTOLOGY
+    requester_message_type: make87_messages.core.Empty
+    provider_message_type: make87_messages.detection.ontology.ModelOntology
+config:
+  values:
+    - name: CONFIDENCE_THRESHOLD
+      description: "The minimum confidence threshold for a detection to be considered valid. Predictions below this will be filtered out. Default: 0.25"
+      default_value: "0.25"
+      required: false
+      secret: false

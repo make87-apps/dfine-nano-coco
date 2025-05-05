@@ -1,4 +1,5 @@
 import io
+import json
 import sys
 from importlib.resources import files
 from pathlib import Path
@@ -9,6 +10,14 @@ import requests
 from PIL import Image
 from optimum.onnxruntime import ORTModel
 from transformers import AutoImageProcessor
+
+from make87_messages.core.empty_pb2 import Empty
+from make87_messages.core.header_pb2 import Header
+from make87_messages.detection.box.box_2d_pb2 import Box2DAxisAligned
+from make87_messages.detection.box.boxes_2d_pb2 import Boxes2DAxisAligned
+from make87_messages.detection.ontology.model_ontology_pb2 import ModelOntology
+from make87_messages.geometry.box.box_2d_aligned_pb2 import Box2DAxisAligned as Box2DAxisAlignedGeometry
+from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
 
 
 def softmax(x: np.ndarray) -> np.ndarray:
@@ -34,59 +43,79 @@ def load_model(model_dir: Path):
     return processor, model
 
 
-def preprocess(image_url: str, processor):
-    resp = requests.get(image_url)
-    resp.raise_for_status()
-    image = Image.open(io.BytesIO(resp.content)).convert("RGB")
-    inputs = processor(images=image, return_tensors="np")
-    return image, inputs
-
-
-def predict(image: Image.Image, inputs: dict, model: ORTModel, conf_threshold: float = 0.5):
-    ort_inputs = {k: v for k, v in inputs.items()}
-    logits, boxes = model.model.run(None, ort_inputs)
-
-    # Shape: logits (1, 300, 80), boxes (1, 300, 4)
-    probs = softmax(logits[0])  # (300, 80)
-    boxes = boxes[0]  # (300, 4)
-
-    # Vectorized class/score selection
-    class_ids = np.argmax(probs, axis=1)  # (300,)
-    confidences = probs[np.arange(probs.shape[0]), class_ids]  # (300,)
-
-    # Vectorized thresholding
-    keep = confidences >= conf_threshold
-    class_ids = class_ids[keep]
-    confidences = confidences[keep]
-    boxes_kept = boxes[keep]
-
-    # Vectorized box conversion
-    boxes_xyxy = cxcywh_to_xyxy(boxes_kept, image.size)  # (N, 4)
-
-    # Combine results
-    detections = list(zip(class_ids.tolist(), confidences.tolist(), map(tuple, boxes_xyxy.tolist())))
-    return detections
-
-
 def main():
     make87.initialize()
+    # Configuration values
+    conf_threshold = make87.get_config_value("CONFIDENCE_THRESHOLD", 0.5, float)
+
+    # Providers / Subscribers / Publishers
+    ontology_endpoint = make87.get_provider("MODEL_ONTOLOGY", Empty, ModelOntology)
+    jpeg_subscriber = make87.get_subscriber(name="IMAGE_DATA", message_type=ImageJPEG)
+    detections_publisher = make87.get_publisher(name="DETECTIONS", message_type=Boxes2DAxisAligned)
+    detections_endpoint = make87.get_provider(
+        name="DETECTIONS",
+        requester_message_type=ImageJPEG,
+        provider_message_type=Boxes2DAxisAligned,
+    )
+
+    # Load model
     model_dir = Path(files("app") / "hf")
-    if not model_dir.exists():
-        print(f"❌ Model directory {model_dir!r} not found.", file=sys.stderr)
-        sys.exit(1)
-
     processor, model = load_model(model_dir)
-    image_url = "https://huggingface.co/datasets/Xenova/transformers.js-docs/resolve/main/cats.jpg"
 
-    while True:
-        image, inputs = preprocess(image_url, processor)
+    # Ontology callback
+    def ontology_callback(_: Empty) -> ModelOntology:
+        header = Header()
+        header.timestamp.GetCurrentTime()
+        entries = [ModelOntology.ClassEntry(id=int(cid), label=lbl) for cid, lbl in model.config.id2label.items()]
+        return ModelOntology(header=header, classes=entries)
 
-        detections = predict(image, inputs, model)
+    ontology_endpoint.provide(ontology_callback)
 
-        id2label = model.config.id2label
-        print(f"✅ {len(detections)} detections with confidence ≥ 0.5")
-        for class_id, conf, box in detections:
-            print(f"  Class: {class_id} ({id2label[class_id]}), Confidence: {conf:.2f}, Box: {box}")
+    # Detection callback
+    def detections_callback(message: ImageJPEG) -> Boxes2DAxisAligned:
+        # Decode JPEG to PIL Image
+        image = Image.open(io.BytesIO(message.data)).convert("RGB")
+        # Preprocess
+        inputs = processor(images=image, return_tensors="np")
+        # Inference
+        ort_inputs = {k: v for k, v in inputs.items()}
+        logits, boxes = model.model.run(None, ort_inputs)
+        # Postprocess
+        probs = softmax(logits[0])
+        raw_boxes = boxes[0]
+        class_ids = np.argmax(probs, axis=1)
+        confidences = probs[np.arange(probs.shape[0]), class_ids]
+        keep = confidences >= conf_threshold
+        class_ids = class_ids[keep].astype(int)
+        confidences = confidences[keep].astype(float)
+        boxes_kept = raw_boxes[keep]
+        boxes_xyxy = cxcywh_to_xyxy(boxes_kept, image.size).astype(float)
+
+        # Build output message
+        header = make87.header_from_message(Header, message=message, append_entity_path="hf_model")
+        out = Boxes2DAxisAligned(
+            header=header,
+            boxes=[
+                Box2DAxisAligned(
+                    geometry=Box2DAxisAlignedGeometry(
+                        header=header,
+                        x=x0,
+                        y=y0,
+                        width=x1 - x0,
+                        height=y1 - y0,
+                    ),
+                    confidence=conf,
+                    class_id=cid,
+                )
+                for cid, conf, (x0, y0, x1, y1) in zip(class_ids, confidences, boxes_xyxy.tolist())
+            ],
+        )
+        return out
+
+    jpeg_subscriber.subscribe(lambda msg: detections_publisher.publish(detections_callback(msg)))
+    detections_endpoint.provide(detections_callback)
+
+    make87.loop()
 
 
 if __name__ == "__main__":
