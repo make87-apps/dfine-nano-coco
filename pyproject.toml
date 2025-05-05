@@ -5,17 +5,24 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "app"
 version = "0.0.1"
+authors = [
+    { name = "Nisse Knudsen", email = "nisse@make87.com" },
+]
 dependencies = [
-  "make87",
-  "make87_messages",
+    "make87",
+    "make87_messages",
+    "Pillow>=11.2.1,<12.0.0",
+    "optimum[onnxruntime]",
+    "transformers",
+    "numpy",
 ]
 description = "A small example package"
 readme = "README.md"
 requires-python = ">=3.9,<3.13"
 
-
-[tool.setuptools]
-packages = ["app"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
 
 [tool.setuptools.package-data]
-app = []
+"app.hf" = ["*"]
