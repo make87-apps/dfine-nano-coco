@@ -6,11 +6,11 @@ inbound_topics:
     message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
 outbound_topics:
   - name: DETECTIONS
-    message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned
+    message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
 provider_endpoints:
   - name: DETECTIONS
     requester_message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
-    provider_message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned
+    provider_message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
   - name: MODEL_ONTOLOGY
     requester_message_type: make87_messages.core.Empty
     provider_message_type: make87_messages.detection.ontology.ModelOntology

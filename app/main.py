@@ -1,16 +1,10 @@
 import io
-import json
-import sys
 from importlib.resources import files
 from pathlib import Path
 
 import make87
 import numpy as np
-import requests
 from PIL import Image
-from optimum.onnxruntime import ORTModel
-from transformers import AutoImageProcessor
-
 from make87_messages.core.empty_pb2 import Empty
 from make87_messages.core.header_pb2 import Header
 from make87_messages.detection.box.box_2d_pb2 import Box2DAxisAligned
@@ -18,6 +12,8 @@ from make87_messages.detection.box.boxes_2d_pb2 import Boxes2DAxisAligned
 from make87_messages.detection.ontology.model_ontology_pb2 import ModelOntology
 from make87_messages.geometry.box.box_2d_aligned_pb2 import Box2DAxisAligned as Box2DAxisAlignedGeometry
 from make87_messages.image.compressed.image_jpeg_pb2 import ImageJPEG
+from optimum.onnxruntime import ORTModel
+from transformers import AutoImageProcessor
 
 
 def softmax(x: np.ndarray) -> np.ndarray:
