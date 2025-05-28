@@ -9,7 +9,7 @@ authors = [
     { name = "Nisse Knudsen", email = "nisse@make87.com" },
 ]
 dependencies = [
-    "make87[zenoh,protobuf]>=0.1.0-dev0",
+    "make87",
     "make87_messages",
     "Pillow>=11.2.1,<12.0.0",
     "optimum[onnxruntime]",

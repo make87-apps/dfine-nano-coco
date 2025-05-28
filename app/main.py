@@ -2,11 +2,9 @@ import io
 from importlib.resources import files
 from pathlib import Path
 
+import make87
 import numpy as np
 from PIL import Image
-from make87.config import load_config_from_env
-from make87.encodings import ProtobufEncoder
-from make87.interfaces.zenoh import ZenohInterface
 from make87_messages.core.empty_pb2 import Empty
 from make87_messages.core.header_pb2 import Header
 from make87_messages.detection.box.box_2d_pb2 import Box2DAxisAligned
@@ -42,42 +40,34 @@ def load_model(model_dir: Path):
 
 
 def main():
-    application_config = load_config_from_env()
-
-    image_jpeg_encoder = ProtobufEncoder(ImageJPEG)
-    ontology_encoder = ProtobufEncoder(ModelOntology)
-    boxes_encoder = ProtobufEncoder(Boxes2DAxisAligned)
-    zenoh_interface = ZenohInterface("zenoh-client")
-
+    make87.initialize()
     # Configuration values
-    conf_threshold = float(application_config.config["CONFIDENCE_THRESHOLD"])
+    conf_threshold = make87.get_config_value("CONFIDENCE_THRESHOLD", 0.5, float)
 
     # Providers / Subscribers / Publishers
-    ontology_provider = zenoh_interface.get_provider("MODEL_ONTOLOGY")
-    jpeg_subscriber = zenoh_interface.get_subscriber("IMAGE_DATA")
-    detections_publisher = zenoh_interface.get_publisher("DETECTIONS")
-    detections_provider = zenoh_interface.get_provider("DETECTIONS")
+    ontology_endpoint = make87.get_provider("MODEL_ONTOLOGY", Empty, ModelOntology)
+    jpeg_subscriber = make87.get_subscriber(name="IMAGE_DATA", message_type=ImageJPEG)
+    detections_publisher = make87.get_publisher(name="DETECTIONS", message_type=Boxes2DAxisAligned)
+    detections_endpoint = make87.get_provider(
+        name="DETECTIONS",
+        requester_message_type=ImageJPEG,
+        provider_message_type=Boxes2DAxisAligned,
+    )
 
     # Load model
     model_dir = Path(files("app") / "hf")
     processor, model = load_model(model_dir)
 
-    # Ontology provider using blocking sync API
-    def ontology_callback() -> ModelOntology:
+    # Ontology callback
+    def ontology_callback(_: Empty) -> ModelOntology:
         header = Header()
         header.timestamp.GetCurrentTime()
         entries = [ModelOntology.ClassEntry(id=int(cid), label=lbl) for cid, lbl in model.config.id2label.items()]
         return ModelOntology(header=header, classes=entries)
 
-    # Serve ontology queries
-    def serve_ontology():
-        while True:
-            with ontology_provider.recv() as query:
-                response = ontology_callback()
-                response_encoded = ontology_encoder.encode(response)
-                query.reply(key_expr=query.key_expr, payload=response_encoded)
+    ontology_endpoint.provide(ontology_callback)
 
-    # Detection provider using blocking sync API
+    # Detection callback
     def detections_callback(message: ImageJPEG) -> Boxes2DAxisAligned:
         # Decode JPEG to PIL Image
         image = Image.open(io.BytesIO(message.data)).convert("RGB")
@@ -98,9 +88,7 @@ def main():
         boxes_xyxy = cxcywh_to_xyxy(boxes_kept, image.size).astype(float)
 
         # Build output message
-        header = Header()
-        header.CopyFrom(message.header)
-        header.entity_path = message.header.entity_path + "/detections"
+        header = make87.header_from_message(Header, message=message, append_entity_path="hf_model")
         out = Boxes2DAxisAligned(
             header=header,
             boxes=[
@@ -120,25 +108,10 @@ def main():
         )
         return out
 
-    def serve_detections():
-        while True:
-            with detections_provider.recv() as query:
-                request = image_jpeg_encoder.decode(query.payload.to_bytes())
-                response = detections_callback(request)
-                response_encoded = boxes_encoder.encode(response)
-                query.reply(key_expr=query.key_expr, payload=response_encoded)
+    jpeg_subscriber.subscribe(lambda msg: detections_publisher.publish(detections_callback(msg)))
+    detections_endpoint.provide(detections_callback)
 
-    import threading
-
-    threading.Thread(target=serve_ontology, daemon=True).start()
-    threading.Thread(target=serve_detections, daemon=True).start()
-
-    # Blocking subscriber loop for images
-    for sample in jpeg_subscriber:
-        msg = image_jpeg_encoder.decode(sample.payload.to_bytes())
-        detections = detections_callback(msg)
-        detections_encoded = boxes_encoder.encode(detections)
-        detections_publisher.put(payload=detections_encoded)
+    make87.loop()
 
 
 if __name__ == "__main__":
