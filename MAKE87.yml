@@ -1,19 +1,34 @@
-build_kit:
-  name: python3
-  version: latest
-inbound_topics:
-  - name: IMAGE_DATA
-    message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
-outbound_topics:
-  - name: DETECTIONS
-    message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
-provider_endpoints:
-  - name: DETECTIONS
-    requester_message_type: make87_messages.image.compressed.image_jpeg.ImageJPEG
-    provider_message_type: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
-  - name: MODEL_ONTOLOGY
-    requester_message_type: make87_messages.core.Empty
-    provider_message_type: make87_messages.detection.ontology.ModelOntology
+version: 1
+interfaces:
+  - name: zenoh-client
+    protocol: zenoh
+    default_port:
+      name: zenoh-client
+      protocol: TCP
+      target_port: 7447
+    subscribers:
+      - name: IMAGE_DATA
+        spec:
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+        encoding: proto
+    publishers:
+      - name: DETECTIONS
+        spec:
+          make87_message: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
+        encoding: json
+    providers:
+      - name: DETECTIONS
+        request_spec:
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+        response_spec:
+          make87_message: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
+        encoding: proto
+      - name: MODEL_ONTOLOGY
+        request_spec:
+          make87_message: make87_messages.core.Empty
+        response_spec:
+          make87_message: make87_messages.detection.ontology.ModelOntology
+        encoding: proto
 config:
   values:
     - name: CONFIDENCE_THRESHOLD
@@ -21,3 +36,9 @@ config:
       default_value: "0.25"
       required: false
       secret: false
+build:
+  build_kit:
+    name: python3
+build_dev:
+  build_kit:
+    name: python3
