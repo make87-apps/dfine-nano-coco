@@ -6,29 +6,32 @@ interfaces:
       name: zenoh-client
       protocol: TCP
       target_port: 7447
-    subscribers:
-      - name: IMAGE_DATA
-        spec:
-          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
-        encoding: proto
+      publish_mode: Ingress
+      is_system_interface: false
     publishers:
       - name: DETECTIONS
         spec:
-          make87_message: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
+          string: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
         encoding: json
+    subscribers:
+      - name: IMAGE_DATA
+        spec:
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG:ro11zj
+        encoding: proto
     providers:
       - name: DETECTIONS
         request_spec:
-          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG
+          make87_message: make87_messages.image.compressed.image_jpeg.ImageJPEG:ro11zj
         response_spec:
-          make87_message: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
+          string: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
         encoding: proto
       - name: MODEL_ONTOLOGY
         request_spec:
-          make87_message: make87_messages.core.Empty
+          string: make87_messages.core.Empty
         response_spec:
-          make87_message: make87_messages.detection.ontology.ModelOntology
+          string: make87_messages.detection.ontology.ModelOntology
         encoding: proto
+container_config: {}
 config:
   values:
     - name: CONFIDENCE_THRESHOLD
