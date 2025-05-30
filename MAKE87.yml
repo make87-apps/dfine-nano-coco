@@ -33,12 +33,12 @@ interfaces:
         encoding: proto
 container_config: {}
 config:
-  values:
-    - name: CONFIDENCE_THRESHOLD
+  type: object
+  properties:
+    CONFIDENCE_THRESHOLD:
+      type: number
+      default: 0.25
       description: "The minimum confidence threshold for a detection to be considered valid. Predictions below this will be filtered out. Default: 0.25"
-      default_value: "0.25"
-      required: false
-      secret: false
 build:
   build_kit:
     name: python3
