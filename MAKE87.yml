@@ -15,7 +15,7 @@ interfaces:
       - name: DETECTIONS
         spec:
           make87_message: make87_messages.detection.box.boxes_2d_aligned.Boxes2DAxisAligned/a
-        encoding: json
+        encoding: proto
     providers:
       - name: DETECTIONS
         request_spec:
